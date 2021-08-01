@@ -46,6 +46,7 @@
 #include <inttypes.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <libgeom.h>
 #include <libutil.h>
 #include <paths.h>
 #include <pthread.h>
@@ -750,7 +751,8 @@ disk_thread(void *arg)
 			req->r_data = NULL;
 			break;
 		case GGATE_CMD_FLUSH:
-			data = fsync(fd);
+			fsync(fd);
+			data = g_flush(fd);
 			if (data != 0)
 				req->r_error = errno;
 			break;
