@@ -6,7 +6,7 @@ MAN=	ggated.8
 SRCS=	ggated.c ggate.c
 PACKAGE=	ggate
 
-LIBADD=	pthread util
+LIBADD=	pthread util geom
 
 CFLAGS+= -I${.CURDIR:H}/shared
 
