@@ -290,6 +290,7 @@ int	LineNumber;
 unsigned Jitter,
 	RootJitter;
 time_t	TargetTime;
+int	HtmlPreformat = 0;
 
 # if DEBUGGING
 int	DebugFlags;
@@ -308,6 +309,7 @@ extern	int	LineNumber;
 extern unsigned	Jitter,
 		RootJitter;
 extern	time_t	TargetTime;
+extern	int	HtmlPreformat;
 extern struct pidfh *pfh;
 # if DEBUGGING
 extern	int	DebugFlags;

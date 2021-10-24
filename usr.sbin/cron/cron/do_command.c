@@ -84,6 +84,20 @@ do_command(e, u)
 	Debug(DPROC, ("[%d] main process returning to work\n", getpid()))
 }
 
+static char* escape_html(int ch, char* tempbuf) {
+
+	switch (ch) {
+	case '<':
+		return "&lt;";
+	case '>':
+		return "&gt;";
+	case '&':
+		return "&amp;";
+	default:
+		tempbuf[0] = ch;
+		return tempbuf;
+	}
+}
 
 static void
 child_process(e, u)
@@ -573,7 +587,12 @@ child_process(e, u)
 				for (env = e->envp;  *env;  env++)
 					fprintf(mail, "X-Cron-Env: <%s>\n",
 						*env);
+
+				if (HtmlPreformat)
+					fprintf(mail, "Content-Type: text/html\n");
 				fprintf(mail, "\n");
+				if (HtmlPreformat)
+					fprintf(mail, "<html><pre style=\"white-space: pre;\">\n");
 
 				/* this was the first char from the pipe
 				 */
@@ -587,8 +606,19 @@ child_process(e, u)
 
 			while (EOF != (ch = getc(in))) {
 				bytes++;
-				if (mail)
-					putc(ch, mail);
+				if (mail) {
+					if (HtmlPreformat) {
+						char tempbuf[2] = {0, 0};
+						char *escapedstring = escape_html(ch, &tempbuf[0]);
+						fputs(escapedstring, mail);
+					} else {
+						putc(ch, mail);
+					}
+				}
+			}
+
+			if (mailto && HtmlPreformat) {
+				fprintf(mail, "</pre></html>\n");
 			}
 		}
 		/*if data from grandchild*/
