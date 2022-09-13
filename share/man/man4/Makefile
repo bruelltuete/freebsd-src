@@ -251,6 +251,7 @@ MAN=	aac.4 \
 	ismt.4 \
 	isp.4 \
 	ispfw.4 \
+	${_it8613hwm.4} \
 	${_itwd.4} \
 	iwi.4 \
 	iwifw.4 \
@@ -850,6 +851,7 @@ _if_wpi.4=	if_wpi.4
 _igc.4=		igc.4
 _imcsmb.4=	imcsmb.4
 _io.4=		io.4
+_it8613hwm.4=	it8613hwm.4
 _itwd.4=	itwd.4
 _kvmclock.4=	kvmclock.4
 _mgb.4=		mgb.4

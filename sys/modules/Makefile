@@ -195,6 +195,7 @@ SUBDIR=	\
 	${_iser} \
 	isp \
 	${_ispfw} \
+	${_it8613hwm} \
 	${_itwd} \
 	${_iwi} \
 	${_iwifw} \
@@ -704,6 +705,7 @@ _exca=		exca
 _if_ndis=	if_ndis
 _igc=		igc
 _io=		io
+_it8613hwm=	it8613hwm
 _itwd=		itwd
 _ix=		ix
 _ixv=		ixv
