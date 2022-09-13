@@ -290,6 +290,10 @@ static const struct {
 	const struct sio_device	*devices;
 } superio_table[] = {
 	{
+		.vendor = SUPERIO_VENDOR_ITE, .devid = 0x8613,
+		.devices = ite_devices,
+	},
+	{
 		.vendor = SUPERIO_VENDOR_ITE, .devid = 0x8712,
 		.devices = ite_devices,
 	},
@@ -545,8 +549,9 @@ superio_detect(device_t dev, bool claim, struct siosc *sc)
 	sc->revid = revid;
 
 	KASSERT(sc->vendor == SUPERIO_VENDOR_ITE ||
-	    sc->vendor == SUPERIO_VENDOR_NUVOTON,
-	    ("Only ITE and Nuvoton SuperIO-s are supported"));
+	    sc->vendor == SUPERIO_VENDOR_NUVOTON ||
+	    sc->vendor == SUPERIO_VENDOR_FINTEK,
+	    ("Only ITE, Nuvoton or Fintek SuperIO-s are supported"));
 	sc->ldn_reg = 0x07;
 	sc->enable_reg = 0x30;
 	sc->current_ldn = 0xff;	/* no device should have this */
