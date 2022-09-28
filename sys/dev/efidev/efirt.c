@@ -30,6 +30,8 @@
  */
 
 #include <sys/cdefs.h>
+#include "opt_acpi.h"
+
 #include <sys/param.h>
 #include <sys/efi.h>
 #include <sys/eventhandler.h>
@@ -55,6 +57,10 @@
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <vm/vm_map.h>
+
+#ifdef DEV_ACPI
+#include <contrib/dev/acpica/include/acpi.h>
+#endif
 
 static struct efi_systbl *efi_systbl;
 static eventhandler_tag efi_shutdown_tag;
@@ -439,6 +445,71 @@ efi_get_time(struct efi_tm *tm)
 	 */
 	error = efi_get_time_locked(tm, &dummy);
 	EFI_TIME_UNLOCK();
+	return (error);
+}
+
+int
+efi_get_waketime(uint8_t *enabled, uint8_t *pending, struct efi_tm *tm)
+{
+	struct efirt_callinfo ec;
+	int error;
+#ifdef DEV_ACPI
+	UINT32 acpiRtcEnabled;
+#endif
+
+	if (efi_runtime == NULL)
+		return (ENXIO);
+
+	EFI_TIME_LOCK();
+	bzero(&ec, sizeof(ec));
+	ec.ec_name = "rt_getwaketime";
+	ec.ec_argcnt = 3;
+	ec.ec_arg1 = (uintptr_t)enabled;
+	ec.ec_arg2 = (uintptr_t)pending;
+	ec.ec_arg3 = (uintptr_t)tm;
+	ec.ec_fptr = EFI_RT_METHOD_PA(rt_getwaketime);
+	error = efi_call(&ec);
+	EFI_TIME_UNLOCK();
+
+#ifdef DEV_ACPI
+	if (error == 0) {
+		error = AcpiReadBitRegister(ACPI_BITREG_RT_CLOCK_ENABLE,
+		    &acpiRtcEnabled);
+		if (ACPI_SUCCESS(error)) {
+			*enabled = *enabled && acpiRtcEnabled;
+		}
+	}
+#endif
+
+	return (error);
+}
+
+int
+efi_set_waketime(uint8_t enable, struct efi_tm *tm)
+{
+	struct efirt_callinfo ec;
+	int error;
+
+	if (efi_runtime == NULL)
+		return (ENXIO);
+
+	EFI_TIME_LOCK();
+	bzero(&ec, sizeof(ec));
+	ec.ec_name = "rt_setwaketime";
+	ec.ec_argcnt = 2;
+	ec.ec_arg1 = (uintptr_t)enable;
+	ec.ec_arg2 = (uintptr_t)tm;
+	ec.ec_fptr = EFI_RT_METHOD_PA(rt_setwaketime);
+	error = efi_call(&ec);
+	EFI_TIME_UNLOCK();
+
+#ifdef DEV_ACPI
+	if (error == 0) {
+		error = AcpiWriteBitRegister(ACPI_BITREG_RT_CLOCK_ENABLE,
+		    (enable != 0) ? 1 : 0);
+	}
+#endif
+
 	return (error);
 }
 
