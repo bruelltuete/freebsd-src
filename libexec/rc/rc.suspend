@@ -51,6 +51,24 @@ echo $$ 2> /dev/null > /var/run/rc.suspend.pid
 # suspend and reloading it on resume.  Example:
 # kldunload usb
 
+. /etc/rc.subr
+
+load_rc_config
+
+rcorder_opts="-k suspend"
+
+case ${local_startup} in
+[Nn][Oo] | '') ;;
+*)     find_local_scripts_new ;;
+esac
+
+files=`rcorder ${rcorder_opts} /etc/rc.d/* ${local_rc} 2>/dev/null`
+
+for _rc_elem in $files; do
+	debug "run_rc_script $_rc_elem suspend"
+	run_rc_script $_rc_elem suspend
+done
+
 /usr/bin/logger -t $subsystem suspend at `/bin/date +'%Y%m%d %H:%M:%S'`
 /bin/sync && /bin/sync && /bin/sync
 /bin/sleep 3
