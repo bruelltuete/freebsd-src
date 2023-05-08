@@ -107,6 +107,30 @@ static int it8613hwm_get_fan_sysctl(SYSCTL_HANDLER_ARGS)
 	return sysctl_handle_int(oidp, &fanspeedrpm, 0, req);
 }
 
+static int it8613hwm_get_voltage_sysctl(SYSCTL_HANDLER_ARGS)
+{
+	device_t dev = (device_t) arg1;
+	struct it8613hwm_softc* sc = device_get_softc(dev);
+	int voltageindex = arg2;
+	int voltage = 0;
+
+	if (voltageindex >= 0 && voltageindex <= 7)
+	{
+		mtx_lock(&sc->lock);
+
+		bus_write_1(sc->ioport_res, 0, 0x20 + voltageindex);
+		voltage = (uint8_t) bus_read_1(sc->ioport_res, 1);
+		if (voltage != 255)
+			voltage = voltage * 1000 / 16;
+		else
+			voltage = 0;
+
+		mtx_unlock(&sc->lock);
+	}
+
+	return sysctl_handle_int(oidp, &voltage, 0, req);
+}
+
 static int it8613hwm_probe(device_t dev)
 {
 	if (superio_vendor(dev) != SUPERIO_VENDOR_ITE)
@@ -185,6 +209,32 @@ static int it8613hwm_attach(device_t dev)
 	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
 	    OID_AUTO, "fan2", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
 	    dev, 2, it8613hwm_get_fan_sysctl, "I", "RPM of fan 2");
+
+	/* Gets us "dev.it8613hwm.0.voltage0" etc */
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage0", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 0, it8613hwm_get_voltage_sysctl, "I", "Voltage 0 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage1", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 1, it8613hwm_get_voltage_sysctl, "I", "Voltage 1 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage2", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 2, it8613hwm_get_voltage_sysctl, "I", "Voltage 2 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage3", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 3, it8613hwm_get_voltage_sysctl, "I", "Voltage 3 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage4", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 4, it8613hwm_get_voltage_sysctl, "I", "Voltage 4 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage5", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 5, it8613hwm_get_voltage_sysctl, "I", "Voltage 5 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage6", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 6, it8613hwm_get_voltage_sysctl, "I", "Voltage 6 in mV");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+	    OID_AUTO, "voltage7", CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    dev, 7, it8613hwm_get_voltage_sysctl, "I", "Voltage 7 in mV");
 
 	return (0);
 }
