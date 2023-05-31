@@ -121,6 +121,7 @@ static int	hwpstate_shutdown(device_t dev);
 static int	hwpstate_features(driver_t *driver, u_int *features);
 static int	hwpstate_get_info_from_acpi_perf(device_t dev, device_t perf_dev);
 static int	hwpstate_get_info_from_msr(device_t dev);
+static void	hwpstate_override_msr(device_t dev);
 static int	hwpstate_goto_pstate(device_t dev, int pstate_id);
 
 static int	hwpstate_verbose;
@@ -136,6 +137,16 @@ SYSCTL_BOOL(_debug, OID_AUTO, hwpstate_pstate_limit, CTLFLAG_RWTUN,
     &hwpstate_pstate_limit, 0,
     "If enabled (1), limit administrative control of P-states to the value in "
     "CurPstateLimit");
+
+static bool	hwpstate_prefer_msr;
+SYSCTL_BOOL(_debug, OID_AUTO, hwpstate_prefer_msr, CTLFLAG_RDTUN,
+    &hwpstate_prefer_msr, 0,
+    "If enabled (1), use MSR instead of acpi_perf for P-state information");
+
+static char 	hwpstate_override_pstatecfgmsr[8 * sizeof("0x8000000049120890")];
+SYSCTL_STRING(_debug, OID_AUTO, hwpstate_override_pstatecfgmsr, CTLFLAG_RWTUN,
+    hwpstate_override_pstatecfgmsr, sizeof(hwpstate_override_pstatecfgmsr),
+    "Allows overriding PStateDef, up to 8 hexadecimals");
 
 static device_method_t hwpstate_methods[] = {
 	/* Device interface */
@@ -174,7 +185,7 @@ hwpstate_goto_pstate(device_t dev, int id)
 {
 	sbintime_t sbt;
 	uint64_t msr;
-	int cpu, i, j, limit;
+	int i, j, limit;
 
 	if (hwpstate_pstate_limit) {
 		/* get the current pstate limit */
@@ -187,40 +198,25 @@ hwpstate_goto_pstate(device_t dev, int id)
 		}
 	}
 
-	cpu = curcpu;
-	HWPSTATE_DEBUG(dev, "setting P%d-state on cpu%d\n", id, cpu);
-	/* Go To Px-state */
-	wrmsr(MSR_AMD_10H_11H_CONTROL, id);
-
 	/*
 	 * We are going to the same Px-state on all cpus.
 	 * Probably should take _PSD into account.
 	 */
-	CPU_FOREACH(i) {
-		if (i == cpu)
-			continue;
-
-		/* Bind to each cpu. */
-		thread_lock(curthread);
-		sched_bind(curthread, i);
-		thread_unlock(curthread);
-		HWPSTATE_DEBUG(dev, "setting P%d-state on cpu%d\n", id, i);
-		/* Go To Px-state */
-		wrmsr(MSR_AMD_10H_11H_CONTROL, id);
-	}
+	HWPSTATE_DEBUG(dev, "setting P%d-state\n", id);
+	x86_msr_op(MSR_AMD_10H_11H_CONTROL, MSR_OP_RENDEZVOUS_ALL | MSR_OP_WRITE,
+	    id, NULL);
 
 	/*
 	 * Verify whether each core is in the requested P-state.
 	 */
 	if (hwpstate_verify) {
 		CPU_FOREACH(i) {
-			thread_lock(curthread);
-			sched_bind(curthread, i);
-			thread_unlock(curthread);
 			/* wait loop (100*100 usec is enough ?) */
 			for (j = 0; j < 100; j++) {
-				/* get the result. not assure msr=id */
-				msr = rdmsr(MSR_AMD_10H_11H_STATUS);
+				/* get the result. to assure msr==id */
+				x86_msr_op(MSR_AMD_10H_11H_STATUS,
+				    MSR_OP_RENDEZVOUS_ONE | MSR_OP_READ | MSR_OP_CPUID(i),
+				    0, &msr);
 				if (msr == id)
 					break;
 				sbt = SBT_1MS / 10;
@@ -379,7 +375,7 @@ hwpstate_probe(device_t dev)
 				 */
 				HWPSTATE_DEBUG(dev, "acpi_perf will take care of pstate transitions.\n");
 				return (ENXIO);
-			} else {
+			} else if (!hwpstate_prefer_msr) {
 				/*
 				 * If acpi_perf has INFO_ONLY flag, (_PCT has FFixedHW)
 				 * we can get _PSS info from acpi_perf
@@ -391,9 +387,9 @@ hwpstate_probe(device_t dev)
 		}
 	}
 
-	if (error == 0) {
+	if (error == 0 && !hwpstate_prefer_msr) {
 		/*
-		 * Now we get _PSS info from acpi_perf without error.
+		 * We got _PSS info from acpi_perf without error.
 		 * Let's check it.
 		 */
 		msr = rdmsr(MSR_AMD_10H_11H_LIMIT);
@@ -404,11 +400,14 @@ hwpstate_probe(device_t dev)
 		}
 	}
 
+	if (strlen(&hwpstate_override_pstatecfgmsr[0]) > 0)
+		hwpstate_override_msr(dev);
+
 	/*
 	 * If we cannot get info from acpi_perf,
 	 * Let's get info from MSRs.
 	 */
-	if (error)
+	if (error || hwpstate_prefer_msr)
 		error = hwpstate_get_info_from_msr(dev);
 	if (error)
 		return (error);
@@ -422,6 +421,37 @@ hwpstate_attach(device_t dev)
 {
 
 	return (cpufreq_register(dev));
+}
+
+static void
+hwpstate_override_msr(device_t dev)
+{
+	char temp[sizeof(hwpstate_override_pstatecfgmsr)];
+	char *token, *next;
+	uint64_t msr[8];
+	int nvalid, i;
+
+	memcpy(&temp[0], &hwpstate_override_pstatecfgmsr[0], sizeof(temp));
+	next = &temp[0];
+	token = strsep(&next, " ");
+	/* Ignore PStateCurLim here, sysadmin knows best. */
+	for (nvalid = 0; (nvalid < 8) && (token != NULL); ) {
+		if (sscanf(token, "0x%lx", &msr[nvalid]) == 1) {
+			HWPSTATE_DEBUG(dev, "Overriding P%d-state with 0x%lx.\n",
+			    nvalid, msr[nvalid]);
+			++nvalid;
+		} else {
+			HWPSTATE_DEBUG(dev,
+			    "P%d-state MSR override value not parsable: \"%s\"\n",
+			    nvalid, token);
+			break;
+		}
+		token = strsep(&next, " ");
+	}
+
+	for (i = 0; i < nvalid; ++i)
+		x86_msr_op(MSR_AMD_10H_11H_CONFIG + i,
+		    MSR_OP_RENDEZVOUS_ALL | MSR_OP_WRITE, msr[i], NULL);
 }
 
 static int
@@ -440,6 +470,7 @@ hwpstate_get_info_from_msr(device_t dev)
 	hwpstate_set = sc->hwpstate_settings;
 	for (i = 0; i < sc->cfnum; i++) {
 		msr = rdmsr(MSR_AMD_10H_11H_CONFIG + i);
+		HWPSTATE_DEBUG(dev, "PStateDef[%d]: 0x%lx\n", i, msr);
 		if ((msr & ((uint64_t)1 << 63)) == 0) {
 			HWPSTATE_DEBUG(dev, "msr is not valid.\n");
 			return (ENXIO);
