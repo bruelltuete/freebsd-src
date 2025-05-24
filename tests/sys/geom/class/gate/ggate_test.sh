@@ -2,6 +2,49 @@ PIDFILE=ggated.pid
 PLAINFILES=plainfiles
 CONF=gg.exports
 
+atf_test_case ggate_flush cleanup
+ggate_flush_head()
+{
+	atf_set "descr" "a flush on the ggatec side makes it all the way to ggated"
+	atf_set "require.progs" "ggatec ggated gnop"
+	atf_set "require.user" "root"
+	atf_set "timeout" 60
+}
+
+ggate_flush_body()
+{
+	load_ggate
+	us=$(alloc_ggate_dev)
+	md=$(alloc_md)
+	gnop create /dev/$md
+	echo "localhost RW /dev/$md.nop" > $CONF
+	atf_check ggated -p $PORT -F $PIDFILE $CONF
+	atf_check ggatec create -p $PORT -u $us localhost /dev/$md.nop
+
+	ggate_dev=/dev/ggate${us}
+	wait_for_ggate_device ${ggate_dev}
+	# trigger some flushing.
+	atf_check -s exit:0 -e ignore -o ignore zpool create testpool4ggateflush ${ggate_dev}
+
+	numflushes=$(gnop list /dev/$md.nop | grep Flushes | awk '{ print $2 }')
+
+	zpool destroy testpool4ggateflush
+	#gnop destroy /dev/$md.nop
+
+	if [ ${numflushes} -gt "0" ]
+	then
+		atf_pass
+	fi
+
+	atf_fail "No flushes arrived on ggated side"
+}
+
+ggate_flush_cleanup()
+{
+        common_cleanup
+}
+
+
 atf_test_case ggatec_trim cleanup
 ggatec_trim_head()
 {
@@ -59,10 +102,15 @@ ggated_body()
 	work=$(alloc_md)
 	src=$(alloc_md)
 
+	# we are going to check whether copying data from $src into $work via
+	# $ggate_dev produces the same bytes (checksum).
+
+	# init target device $work (which is going to be wrapped as $ggate_dev)
+	# with garbage that's different from what we have in $src.
 	atf_check -e ignore -o ignore \
-	    dd if=/dev/random of=/dev/$work bs=1m count=1 conv=notrunc
+	    dd if=/dev/random of=/dev/$work bs=1m count=64 conv=notrunc
 	atf_check -e ignore -o ignore \
-	    dd if=/dev/random of=/dev/$src bs=1m count=1 conv=notrunc
+	    dd if=/dev/random of=/dev/$src bs=1m count=64 conv=notrunc
 
 	echo $CONF >> $PLAINFILES
 	echo "127.0.0.1 RW /dev/$work" > $CONF
@@ -74,8 +122,9 @@ ggated_body()
 
 	wait_for_ggate_device ${ggate_dev}
 
+	# copy from $src into $work via $ggate_dev.
 	atf_check -e ignore -o ignore \
-	    dd if=/dev/${src} of=${ggate_dev} bs=1m count=1 conv=notrunc
+	    dd if=/dev/${src} of=${ggate_dev} bs=1m count=64 conv=notrunc
 
 	checksum /dev/$src /dev/$work
 }
@@ -139,9 +188,9 @@ ggatel_md_body()
 	src=$(alloc_md)
 
 	atf_check -e ignore -o ignore \
-	    dd if=/dev/random of=$work bs=1m count=1 conv=notrunc
+	    dd if=/dev/random of=$work bs=1m count=64 conv=notrunc
 	atf_check -e ignore -o ignore \
-	    dd if=/dev/random of=$src bs=1m count=1 conv=notrunc
+	    dd if=/dev/random of=$src bs=1m count=64 conv=notrunc
 
 	atf_check ggatel create -u $us /dev/$work
 
@@ -150,7 +199,7 @@ ggatel_md_body()
 	wait_for_ggate_device ${ggate_dev}
 
 	atf_check -e ignore -o ignore \
-	    dd if=/dev/$src of=${ggate_dev} bs=1m count=1 conv=notrunc
+	    dd if=/dev/$src of=${ggate_dev} bs=1m count=64 conv=notrunc
 
 	checksum /dev/$src /dev/$work
 }
@@ -166,6 +215,7 @@ atf_init_test_cases()
 	atf_add_test_case ggatel_file
 	atf_add_test_case ggatel_md
 	atf_add_test_case ggatec_trim
+	atf_add_test_case ggate_flush
 }
 
 alloc_ggate_dev()
@@ -184,7 +234,7 @@ alloc_md()
 {
 	local md
 
-	md=$(mdconfig -a -t malloc -s 1M) || \
+	md=$(mdconfig -a -t malloc -s 64M) || \
 		atf_fail "failed to allocate md device"
 	echo ${md} >> md.devs
 	echo ${md}
