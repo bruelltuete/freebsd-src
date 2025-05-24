@@ -63,6 +63,7 @@ XTRN int	LineNumber INIT(0);
 XTRN unsigned	Jitter;
 XTRN unsigned	RootJitter;
 XTRN time_t	TargetTime INIT(0);
+XTRN int	HtmlPreformat INIT(0);
 XTRN struct pidfh *pfh;
 
 #if DEBUGGING
