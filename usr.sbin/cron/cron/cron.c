@@ -56,7 +56,7 @@ usage(void)
 #endif
 
 	fprintf(stderr, "usage: cron [-j jitter] [-J rootjitter] "
-			"[-m mailto] [-n] [-s] [-o] [-x debugflag[,...]]\n");
+			"[-m mailto] [-n] [-s] [-o] [-H] [-x debugflag[,...]]\n");
 #if DEBUGGING
 	fprintf(stderr, "\ndebugflags: ");
 
@@ -499,7 +499,7 @@ parse_args(int argc, char *argv[])
 	int argch;
 	char *endp;
 
-	while ((argch = getopt(argc, argv, "j:J:m:nosx:")) != -1) {
+	while ((argch = getopt(argc, argv, "j:J:m:nosHx:")) != -1) {
 		switch (argch) {
 		case 'j':
 			Jitter = strtoul(optarg, &endp, 10);
@@ -524,6 +524,9 @@ parse_args(int argc, char *argv[])
 			break;
 		case 's':
 			dst_enabled = 1;
+			break;
+		case 'H':
+			HtmlPreformat = 1;
 			break;
 		case 'x':
 			if (!set_debug_flags(optarg))
